@@ -16,80 +16,23 @@ st.set_page_config(
 # Function to load data
 @st.cache_data
 def load_data():
-    # When you provide the actual CSV file, this function will load it
-    # For now, I'll create sample data that matches your description
-    
-    # Create date range for the last 36 months
-    end_date = datetime.now()
-    start_date = end_date - timedelta(days=36*30)
-    dates = pd.date_range(start=start_date, end=end_date, freq='M')
-    
-    # Create a DataFrame
-    machines = ['Máquina A', 'Máquina B', 'Máquina C', 'Máquina D']
-    data = []
-    
-    for date in dates:
-        for machine in machines:
-            # Generate realistic data for each machine
-            month_name = calendar.month_name[date.month]
-            year = date.year
-            month_str = f"{month_name[:3]} {year}"
-            
-            # Different patterns for different machines
-            if machine == 'Máquina A':
-                temp_base = 65 + np.sin(date.month/12 * np.pi) * 10
-                vibration_base = 120 + np.cos(date.month/6 * np.pi) * 30
-                energy_base = 450 + np.sin(date.month/3 * np.pi) * 50
-                failures_base = max(0, 12 - date.month % 12)
-                
-            elif machine == 'Máquina B':
-                temp_base = 70 + np.cos(date.month/6 * np.pi) * 8
-                vibration_base = 140 + np.sin(date.month/4 * np.pi) * 25
-                energy_base = 500 + np.cos(date.month/5 * np.pi) * 60
-                failures_base = max(0, 10 - (date.month + 3) % 12)
-                
-            elif machine == 'Máquina C':
-                temp_base = 60 + np.sin(date.month/9 * np.pi) * 12
-                vibration_base = 110 + np.cos(date.month/8 * np.pi) * 20
-                energy_base = 400 + np.sin(date.month/7 * np.pi) * 45
-                failures_base = max(0, 8 - (date.month + 6) % 12)
-                
-            else:  # Máquina D
-                temp_base = 75 + np.cos(date.month/10 * np.pi) * 7
-                vibration_base = 130 + np.sin(date.month/5 * np.pi) * 35
-                energy_base = 550 + np.cos(date.month/4 * np.pi) * 55
-                failures_base = max(0, 14 - (date.month + 9) % 12)
-            
-            # Add random noise
-            temperature = temp_base + np.random.normal(0, 2)
-            vibration = vibration_base + np.random.normal(0, 5)
-            energy_consumption = energy_base + np.random.normal(0, 20)
-            
-            # Calculate predictive model effectiveness (increasing over time)
-            # More recent months have better prediction
-            time_factor = (date - start_date).days / (end_date - start_date).days
-            failures_occurred = int(max(1, failures_base + np.random.poisson(2) - 8 * time_factor))
-            failures_prevented = int(max(0, failures_base * time_factor * 1.5 + np.random.poisson(1)))
-            
-            # Calculate maintenance costs (decreasing over time)
-            base_cost = 5000 - (3000 * time_factor)
-            correction_cost = base_cost * failures_occurred + np.random.normal(0, 200)
-            
-            # Calculate response time (improving over time)
-            response_time = max(5, 60 - (40 * time_factor) + np.random.normal(0, 5))
-            
-            data.append({
-                'fecha': date,
-                'mes_anio': month_str,
-                'maquina': machine,
-                'temperatura_equipo': round(temperature, 1),
-                'vibraciones_anomalas': round(vibration, 2),
-                'consumo_energia': round(energy_consumption, 2),
-                'fallas_ocurridas': failures_occurred,
-                'fallas_evitadas': failures_prevented,
-                'costo_mantenimiento_correctivo': round(correction_cost, 2),
-                'tiempo_respuesta_alertas': round(response_time, 1)
-            })
+    try:
+        # Leer el archivo CSV directamente desde el mismo directorio
+        df = pd.read_csv("KPIs_normales_Arcelik.csv")
+        
+        # Asegurarse de que la columna 'fecha' sea de tipo datetime
+        if 'fecha' in df.columns:
+            df['fecha'] = pd.to_datetime(df['fecha'])
+        
+        return df
+    except Exception as e:
+        st.error(f"Error al cargar los datos: {e}")
+        # Proporcionar un DataFrame vacío con las columnas esperadas para evitar errores
+        return pd.DataFrame({
+            'fecha': [], 'mes_anio': [], 'maquina': [], 'temperatura_equipo': [],
+            'vibraciones_anomalas': [], 'consumo_energia': [], 'fallas_ocurridas': [],
+            'fallas_evitadas': [], 'costo_mantenimiento_correctivo': [], 'tiempo_respuesta_alertas': []
+        })
     
     df = pd.DataFrame(data)
     return df
