@@ -12,7 +12,6 @@ st.set_page_config(
     page_icon="🏭",
     layout="wide"
 )
-
 # Function to load data
 @st.cache_data
 def load_data():
@@ -20,19 +19,47 @@ def load_data():
         # Leer el archivo CSV directamente desde el mismo directorio
         df = pd.read_csv("KPIs_normales_Arcelik.csv")
         
-        # Asegurarse de que la columna 'fecha' sea de tipo datetime
-        if 'fecha' in df.columns:
-            df['fecha'] = pd.to_datetime(df['fecha'])
+        # Mostrar información sobre las columnas disponibles para depuración
+        st.sidebar.write("Columnas disponibles en el CSV:", df.columns.tolist())
+        
+        # Verificar si existe una columna de fecha (pueden tener diferentes nombres)
+        date_column_candidates = ['fecha', 'date', 'Fecha', 'Date', 'FECHA', 'DATE']
+        date_column = None
+        
+        for col in date_column_candidates:
+            if col in df.columns:
+                date_column = col
+                break
+        
+        # Si encontramos una columna de fecha, convertirla a datetime
+        if date_column:
+            df['fecha'] = pd.to_datetime(df[date_column])
+        # Si no hay columna de fecha, crear una fecha ficticia para evitar errores
+        else:
+            st.warning("No se encontró una columna de fecha en el CSV. Creando fechas simuladas.")
+            df['fecha'] = pd.date_range(start='2022-01-01', periods=len(df), freq='M')
         
         return df
     except Exception as e:
         st.error(f"Error al cargar los datos: {e}")
-        # Proporcionar un DataFrame vacío con las columnas esperadas para evitar errores
-        return pd.DataFrame({
-            'fecha': [], 'mes_anio': [], 'maquina': [], 'temperatura_equipo': [],
-            'vibraciones_anomalas': [], 'consumo_energia': [], 'fallas_ocurridas': [],
-            'fallas_evitadas': [], 'costo_mantenimiento_correctivo': [], 'tiempo_respuesta_alertas': []
+        
+        # Crear un DataFrame simple para evitar errores
+        sample_dates = pd.date_range(start='2022-01-01', periods=36, freq='M')
+        sample_df = pd.DataFrame({
+            'fecha': sample_dates,
+            'mes_anio': [d.strftime('%b %Y') for d in sample_dates],
+            'maquina': ['Máquina A'] * 36,
+            'temperatura_equipo': [65] * 36,
+            'vibraciones_anomalas': [120] * 36,
+            'consumo_energia': [450] * 36,
+            'fallas_ocurridas': [10] * 36,
+            'fallas_evitadas': [5] * 36,
+            'costo_mantenimiento_correctivo': [5000] * 36,
+            'tiempo_respuesta_alertas': [30] * 36
         })
+        return sample_df
+
+
     
     df = pd.DataFrame(data)
     return df
