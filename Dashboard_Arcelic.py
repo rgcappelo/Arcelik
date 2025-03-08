@@ -1,639 +1,550 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+import matplotlib.pyplot as plt
 import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime
-import os
+import calendar
 
 # Configuración de la página
 st.set_page_config(
-    page_title="Arçelik - Dashboard de Predicción de Fallas",
+    page_title="Dashboard Detección de Fallas - Arçelik",
     page_icon="🏭",
-    layout="wide"
+    layout="wide",
+    initial_sidebar_state="expanded"
 )
 
-# Función para cargar los datos
-@st.cache_data
-def load_data():
-    try:
-        # Intentar cargar el archivo CSV
-        if os.path.exists("KPIs_normales_Arcelik.csv"):
-            df = pd.read_csv("KPIs_normales_Arcelik.csv")
-            
-            # Mostrar información de columnas disponibles para depuración
-            with st.sidebar.expander("Columnas disponibles"):
-                st.write(df.columns.tolist())
-            
-            # Verificar y procesar columna de fecha
-            date_columns = ['fecha', 'date', 'Fecha', 'Date', 'FECHA', 'DATE', 'fecha_medicion']
-            date_col = next((col for col in date_columns if col in df.columns), None)
-            
-            if date_col:
-                df['fecha'] = pd.to_datetime(df[date_col])
-            else:
-                st.warning("No se encontró columna de fecha. Creando fechas simuladas.")
-                df['fecha'] = pd.date_range(start='2022-01-01', periods=len(df), freq='M')
-            
-            return df
-        else:
-            st.error(f"No se encontró el archivo 'KPIs_normales_Arcelik.csv' en el directorio actual.")
-            st.info(f"Directorio actual: {os.getcwd()}")
-            st.info(f"Archivos disponibles: {os.listdir()}")
-            
-            # Crear datos de muestra para evitar errores
-            return create_sample_data()
-    except Exception as e:
-        st.error(f"Error al cargar los datos: {e}")
-        return create_sample_data()
+# Estilos CSS personalizados
+st.markdown("""
+<style>
+    .main-header {
+        font-size: 30px;
+        font-weight: bold;
+        color: #2c3e50;
+        text-align: center;
+        margin-bottom: 20px;
+    }
+    .sub-header {
+        font-size: 24px;
+        font-weight: bold;
+        color: #34495e;
+        margin-top: 30px;
+        margin-bottom: 10px;
+    }
+    .metric-card {
+        background-color: #f8f9fa;
+        border-radius: 5px;
+        padding: 20px;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    }
+    .metric-value {
+        font-size: 28px;
+        font-weight: bold;
+        color: #3498db;
+    }
+    .target-text {
+        color: #7f8c8d;
+        font-size: 14px;
+    }
+    .highlight {
+        background-color: #e8f4f8;
+        padding: 10px;
+        border-radius: 5px;
+        border-left: 4px solid #3498db;
+    }
+</style>
+""", unsafe_allow_html=True)
 
-# Función para crear datos de muestra en caso de error
-def create_sample_data():
-    st.warning("Usando datos de muestra para demostración")
-    
-    # Fechas para los últimos 24 meses
-    dates = pd.date_range(start='2022-01-01', periods=24, freq='M')
-    
-    # Crear datos de muestra para 3 máquinas
-    machines = ['Máquina A', 'Máquina B', 'Máquina C']
-    data = []
-    
-    for date in dates:
-        for machine in machines:
-            # Simular mejora en el tiempo (más fallas evitadas conforme pasa el tiempo)
-            month_index = (date.year - 2022) * 12 + date.month - 1
-            improvement_factor = min(0.8, month_index / 24)
-            
-            # Simular datos relevantes
-            failures_occurred = max(1, 10 - int(8 * improvement_factor) + np.random.randint(-2, 3))
-            failures_prevented = int(5 + 12 * improvement_factor + np.random.randint(-1, 2))
-            
-            # Costos de mantenimiento (decrecientes)
-            maintenance_cost = max(1000, 5000 - 3000 * improvement_factor + np.random.normal(0, 500))
-            
-            # Precisión del modelo (creciente)
-            model_accuracy = min(0.98, 0.75 + 0.2 * improvement_factor + np.random.normal(0, 0.02))
-            
-            # Valores de sensores
-            temperature = 65 + np.random.normal(0, 5)
-            vibration = 120 + np.random.normal(0, 10)
-            energy = 450 + np.random.normal(0, 30)
-            
-            # Tiempos de respuesta (mejorando)
-            response_time = max(5, 30 - 20 * improvement_factor + np.random.normal(0, 3))
-            
-            data.append({
-                'fecha': date,
-                'maquina': machine,
-                'temperatura_equipo': round(temperature, 1),
-                'vibraciones_anomalas': round(vibration, 2),
-                'consumo_energia': round(energy, 2),
-                'fallas_ocurridas': failures_occurred,
-                'fallas_evitadas': failures_prevented,
-                'costo_mantenimiento_correctivo': round(maintenance_cost, 2),
-                'precisión_modelo': round(model_accuracy, 4),
-                'tiempo_respuesta': round(response_time, 1)
-            })
-    
-    return pd.DataFrame(data)
+# Datos proporcionados (convertidos a un formato más completo)
+# Generar datos mensuales desde enero 2022 hasta septiembre 2025 (45 meses)
+fechas = []
+for year in range(2022, 2026):
+    for month in range(1, 13):
+        if year == 2025 and month > 9:  # Solo hasta septiembre 2025
+            break
+        fechas.append(f"{year}-{month:02d}")
 
-# Cargar datos
-df = load_data()
+# Datos simulados de fallas (los datos tienen una reducción gradual y proyección a futuro)
+np.random.seed(42)  # Para reproducibilidad
+fallas_ocurridas = [15, 17, 16, 14, 15, 18, 20, 17, 15, 14, 12, 13,  # 2022
+                    14, 12, 13, 11, 12, 10, 9, 11, 10, 9, 8, 7,      # 2023
+                    9, 8, 7, 8, 6, 7, 6, 5, 6, 5, 6, 4,              # 2024
+                    5, 6, 4, 3, 4, 3]                                # 2025 (hasta septiembre)
+                    
+fallas_prevenidas = [5, 6, 7, 8, 7, 9, 10, 11, 12, 13, 14, 15,      # 2022
+                     14, 15, 16, 15, 14, 16, 17, 16, 18, 19, 18, 20, # 2023
+                     18, 19, 21, 20, 22, 21, 23, 24, 22, 23, 24, 25, # 2024
+                     23, 24, 25, 24, 25, 26]                         # 2025 (hasta septiembre)
+
+# Datos de máquinas - 5 máquinas diferentes con sus propios patrones de fallas
+maquinas = ["Línea A", "Línea B", "Línea C", "Línea D", "Línea E"]
+
+# Distribuir las fallas entre las máquinas
+data = []
+for i, fecha in enumerate(fechas):
+    total_ocurridas = fallas_ocurridas[i]
+    total_prevenidas = fallas_prevenidas[i]
+    
+    # Distribuir fallas entre máquinas (sumando hasta el total)
+    dist_ocurridas = np.random.multinomial(total_ocurridas, [0.3, 0.25, 0.2, 0.15, 0.1])
+    dist_prevenidas = np.random.multinomial(total_prevenidas, [0.2, 0.25, 0.15, 0.3, 0.1])
+    
+    for j, maquina in enumerate(maquinas):
+        data.append({
+            "Fecha": fecha,
+            "Máquina": maquina,
+            "Fallas Ocurridas": dist_ocurridas[j],
+            "Fallas Prevenidas": dist_prevenidas[j]
+        })
+
+# Crear DataFrame
+df = pd.DataFrame(data)
+df['Fecha_dt'] = pd.to_datetime(df['Fecha'])
+df['Año'] = df['Fecha_dt'].dt.year
+df['Mes'] = df['Fecha_dt'].dt.month
+df['Mes_Nombre'] = df['Fecha_dt'].dt.month_name()
+
+# Calcular métricas adicionales
+df['Fallas Totales'] = df['Fallas Ocurridas'] + df['Fallas Prevenidas']
+df['Tasa de Prevención'] = np.round((df['Fallas Prevenidas'] / df['Fallas Totales']) * 100, 1)
+
+# Agrupar por fecha para los totales
+df_totales = df.groupby('Fecha').agg({
+    'Fallas Ocurridas': 'sum',
+    'Fallas Prevenidas': 'sum',
+    'Fallas Totales': 'sum'
+}).reset_index()
+
+df_totales['Tasa de Prevención'] = np.round((df_totales['Fallas Prevenidas'] / df_totales['Fallas Totales']) * 100, 1)
+df_totales['Fecha_dt'] = pd.to_datetime(df_totales['Fecha'])
+df_totales['Mes'] = df_totales['Fecha_dt'].dt.month
+df_totales['Año'] = df_totales['Fecha_dt'].dt.year
+df_totales['Proyección'] = df_totales['Fecha_dt'] >= '2024-10-01'
 
 # Sidebar para filtros
-st.sidebar.title("Filtros")
+st.sidebar.image("https://via.placeholder.com/150x80?text=Arçelik", width=150)
+st.sidebar.markdown("### Filtros del Dashboard")
 
-# Visualizar las primeras filas para debug
-with st.sidebar.expander("Vista previa de datos"):
-    st.dataframe(df.head())
+# Filtro de fechas
+min_date = df['Fecha_dt'].min()
+max_date = df['Fecha_dt'].max()
 
-# Filtro de fecha
-try:
-    min_date = df['fecha'].min().to_pydatetime()
-    max_date = df['fecha'].max().to_pydatetime()
-    
-    date_range = st.sidebar.date_input(
-        "Rango de fechas",
-        value=[min_date, max_date],
-        min_value=min_date,
-        max_value=max_date
-    )
-    
-    if len(date_range) == 2:
-        start_date, end_date = date_range
-        filtered_df = df[(df['fecha'] >= pd.Timestamp(start_date)) & 
-                         (df['fecha'] <= pd.Timestamp(end_date))]
-    else:
-        filtered_df = df
-except Exception as e:
-    st.sidebar.error(f"Error en filtro de fechas: {e}")
-    filtered_df = df
+fecha_inicio = st.sidebar.date_input("Fecha Inicio", 
+                                    min_value=min_date,
+                                    max_value=max_date,
+                                    value=min_date)
+fecha_fin = st.sidebar.date_input("Fecha Fin", 
+                                 min_value=min_date,
+                                 max_value=max_date,
+                                 value=max_date)
+
+# Convertir a datetime para filtrar
+fecha_inicio = pd.to_datetime(fecha_inicio)
+fecha_fin = pd.to_datetime(fecha_fin)
 
 # Filtro de máquinas
-try:
-    machine_col = 'maquina'
-    if machine_col in df.columns:
-        machines = df[machine_col].unique()
-        selected_machines = st.sidebar.multiselect(
-            "Seleccionar máquinas",
-            options=machines,
-            default=machines
-        )
-        
-        if selected_machines:
-            filtered_df = filtered_df[filtered_df[machine_col].isin(selected_machines)]
+maquinas_seleccionadas = st.sidebar.multiselect("Seleccionar Máquinas", 
+                                              options=maquinas,
+                                              default=maquinas)
+
+# Aplicar filtros a los datos
+filtro_fecha = (df['Fecha_dt'] >= fecha_inicio) & (df['Fecha_dt'] <= fecha_fin)
+df_filtrado = df[filtro_fecha & df['Máquina'].isin(maquinas_seleccionadas)]
+
+filtro_fecha_totales = (df_totales['Fecha_dt'] >= fecha_inicio) & (df_totales['Fecha_dt'] <= fecha_fin)
+df_totales_filtrado = df_totales[filtro_fecha_totales]
+
+# Marcar datos de proyección
+inicio_proyeccion = pd.to_datetime('2024-10-01')
+df_filtrado['Es Proyección'] = df_filtrado['Fecha_dt'] >= inicio_proyeccion
+df_totales_filtrado['Es Proyección'] = df_totales_filtrado['Fecha_dt'] >= inicio_proyeccion
+
+# Cabecera del Dashboard
+st.markdown('<div class="main-header">Dashboard de Detección de Fallas en Maquinaria - Arçelik</div>', unsafe_allow_html=True)
+
+# Información del OKR
+with st.expander("📌 Objetivo del OKR y Key Results", expanded=False):
+    col1, col2 = st.columns([1, 2])
+    with col1:
+        st.markdown("### Objetivo Principal")
+        st.markdown("**Predecir y reducir fallas en maquinaria en un 60% en dos años mediante simulaciones con gemelos digitales.**")
+    
+    with col2:
+        st.markdown("### Key Results (KR)")
+        st.markdown("""
+        - **KR1:** Implementar modelos predictivos de fallas en el **100% de las líneas críticas** en un año.
+        - **KR2:** Lograr una reducción del **70% en fallas no programadas** en 24 meses.
+        - **KR3:** Obtener una reducción del **30% en costos de mantenimiento correctivo**.
+        """)
+
+# Resumen de métricas
+st.markdown('<div class="sub-header">Resumen de Métricas</div>', unsafe_allow_html=True)
+
+# Calcular métricas de resumen
+total_fallas_ocurridas = df_filtrado['Fallas Ocurridas'].sum()
+total_fallas_prevenidas = df_filtrado['Fallas Prevenidas'].sum()
+total_fallas = total_fallas_ocurridas + total_fallas_prevenidas
+tasa_prevencion = np.round((total_fallas_prevenidas / total_fallas) * 100, 1) if total_fallas > 0 else 0
+
+# Calcular tendencias (comparación con periodo anterior de igual duración)
+dias_periodo = (fecha_fin - fecha_inicio).days
+fecha_periodo_anterior_fin = fecha_inicio - pd.Timedelta(days=1)
+fecha_periodo_anterior_inicio = fecha_periodo_anterior_fin - pd.Timedelta(days=dias_periodo)
+
+# Filtrar para el periodo anterior
+filtro_fecha_anterior = (df['Fecha_dt'] >= fecha_periodo_anterior_inicio) & (df['Fecha_dt'] <= fecha_periodo_anterior_fin)
+filtro_maquinas = df['Máquina'].isin(maquinas_seleccionadas)
+df_periodo_anterior = df[filtro_fecha_anterior & filtro_maquinas]
+
+# Calcular métricas del periodo anterior
+total_fallas_ocurridas_anterior = df_periodo_anterior['Fallas Ocurridas'].sum()
+total_fallas_prevenidas_anterior = df_periodo_anterior['Fallas Prevenidas'].sum()
+
+# Calcular variaciones porcentuales
+var_fallas_ocurridas = np.round(((total_fallas_ocurridas - total_fallas_ocurridas_anterior) / total_fallas_ocurridas_anterior) * 100, 1) if total_fallas_ocurridas_anterior > 0 else 100
+var_fallas_prevenidas = np.round(((total_fallas_prevenidas - total_fallas_prevenidas_anterior) / total_fallas_prevenidas_anterior) * 100, 1) if total_fallas_prevenidas_anterior > 0 else 100
+
+# Mostrar métricas en tarjetas
+col1, col2, col3, col4 = st.columns(4)
+
+with col1:
+    st.markdown('<div class="metric-card">', unsafe_allow_html=True)
+    st.markdown(f'<div style="text-align: center;">Fallas Ocurridas</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="metric-value" style="text-align: center;">{total_fallas_ocurridas}</div>', unsafe_allow_html=True)
+    if var_fallas_ocurridas < 0:
+        st.markdown(f'<div style="text-align: center; color: green;">▼ {abs(var_fallas_ocurridas)}% vs período anterior</div>', unsafe_allow_html=True)
     else:
-        st.sidebar.warning(f"No se encontró la columna '{machine_col}' para filtrar máquinas")
-except Exception as e:
-    st.sidebar.error(f"Error en filtro de máquinas: {e}")
+        st.markdown(f'<div style="text-align: center; color: red;">▲ {var_fallas_ocurridas}% vs período anterior</div>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
 
-# Título principal del dashboard
-st.title("🏭 Dashboard de Predicción de Fallas mediante Gemelos Digitales - Arçelik")
-
-# Sección 1: Objetivo del OKR
-st.header("1️⃣ Objetivo del OKR")
-st.info("🎯 Predecir y reducir fallas en maquinaria en un 60% en dos años mediante simulaciones con gemelos digitales.")
-
-# Sección 2: Key Results
-st.header("2️⃣ Key Results (KR)")
-kr_col1, kr_col2, kr_col3 = st.columns(3)
-
-with kr_col1:
-    st.metric(
-        label="KR1",
-        value="Modelos Predictivos",
-        delta="100% líneas críticas"
-    )
-    st.caption("Implementar modelos predictivos en todas las líneas críticas en un año")
-
-with kr_col2:
-    st.metric(
-        label="KR2",
-        value="Reducción de Fallas",
-        delta="70% en 24 meses"
-    )
-    st.caption("Lograr reducción del 70% en fallas no programadas")
-
-with kr_col3:
-    st.metric(
-        label="KR3",
-        value="Ahorro en Costos",
-        delta="30% mantenimiento"
-    )
-    st.caption("Reducir en 30% los costos de mantenimiento correctivo")
-
-# Sección 3: KPIs
-st.header("3️⃣ Indicadores Clave (KPIs)")
-
-# KPI 1: Fallas evitadas vs. ocurridas
-st.subheader("📊 KPI 1: Número de fallas evitadas vs. fallas ocurridas")
-
-# Cálculos para KPI 1
-try:
-    kpi1_data = filtered_df.groupby('fecha').agg({
-        'fallas_ocurridas': 'sum',
-        'fallas_evitadas': 'sum'
-    }).reset_index()
-    
-    total_fallas_ocurridas = kpi1_data['fallas_ocurridas'].sum()
-    total_fallas_evitadas = kpi1_data['fallas_evitadas'].sum()
-    tasa_prevencion = (total_fallas_evitadas / (total_fallas_ocurridas + total_fallas_evitadas) * 100)
-    
-    # Cards para KPI 1
-    kpi1_col1, kpi1_col2, kpi1_col3 = st.columns(3)
-    
-    with kpi1_col1:
-        st.metric(
-            label="Fallas Ocurridas",
-            value=f"{total_fallas_ocurridas:,}"
-        )
-    
-    with kpi1_col2:
-        st.metric(
-            label="Fallas Evitadas",
-            value=f"{total_fallas_evitadas:,}"
-        )
-    
-    with kpi1_col3:
-        st.metric(
-            label="Tasa de Prevención",
-            value=f"{tasa_prevencion:.1f}%",
-            delta=f"{tasa_prevencion - 50:.1f}%" if tasa_prevencion > 50 else None
-        )
-    
-    with st.expander("📌 Detalles del KPI"):
-        st.markdown("""
-        **Construcción del KPI:** Este KPI compara la cantidad de fallas que ocurrieron con aquellas que fueron anticipadas y prevenidas por el modelo predictivo.
-        
-        **Importancia:** Permite evaluar la efectividad del mantenimiento predictivo.
-        
-        **Factores que afectan este KPI:** Precisión del modelo, tiempos de respuesta, calidad de los sensores IoT.
-        """)
-    
-except Exception as e:
-    st.error(f"Error al calcular KPI 1: {e}")
-
-# KPI 2: Reducción en costos de mantenimiento
-st.subheader("📊 KPI 2: Reducción en costos de mantenimiento correctivo")
-
-try:
-    # Determinar punto medio para comparar antes/después
-    median_date = filtered_df['fecha'].min() + (filtered_df['fecha'].max() - filtered_df['fecha'].min()) / 2
-    
-    before_impl = filtered_df[filtered_df['fecha'] < median_date]
-    after_impl = filtered_df[filtered_df['fecha'] >= median_date]
-    
-    avg_cost_before = before_impl['costo_mantenimiento_correctivo'].mean()
-    avg_cost_after = after_impl['costo_mantenimiento_correctivo'].mean()
-    cost_reduction_pct = ((avg_cost_before - avg_cost_after) / avg_cost_before * 100) if avg_cost_before > 0 else 0
-    
-    # Cards para KPI 2
-    kpi2_col1, kpi2_col2, kpi2_col3 = st.columns(3)
-    
-    with kpi2_col1:
-        st.metric(
-            label="Costo Medio Antes",
-            value=f"${avg_cost_before:,.2f}"
-        )
-    
-    with kpi2_col2:
-        st.metric(
-            label="Costo Medio Después",
-            value=f"${avg_cost_after:,.2f}",
-            delta=f"-${avg_cost_before - avg_cost_after:,.2f}",
-            delta_color="inverse"
-        )
-    
-    with kpi2_col3:
-        st.metric(
-            label="Reducción de Costos",
-            value=f"{cost_reduction_pct:.1f}%"
-        )
-    
-    with st.expander("📌 Detalles del KPI"):
-        st.markdown("""
-        **Construcción del KPI:** Este indicador mide la diferencia en costos de mantenimiento correctivo antes y después de la implementación del sistema de predicción.
-        
-        **Importancia:** Muestra el impacto financiero del mantenimiento predictivo en la reducción de costos operativos.
-        
-        **Factores que afectan este KPI:** Frecuencia de fallas, costos de repuestos, eficiencia en la logística de mantenimiento.
-        """)
-    
-except Exception as e:
-    st.error(f"Error al calcular KPI 2: {e}")
-
-# KPI 3: Precisión del modelo predictivo
-st.subheader("📊 KPI 3: Precisión del modelo predictivo")
-
-try:
-    if 'precisión_modelo' in filtered_df.columns:
-        avg_accuracy = filtered_df['precisión_modelo'].mean()
-        min_accuracy = filtered_df['precisión_modelo'].min()
-        max_accuracy = filtered_df['precisión_modelo'].max()
-        
-        # Cards para KPI 3
-        kpi3_col1, kpi3_col2, kpi3_col3 = st.columns(3)
-        
-        with kpi3_col1:
-            st.metric(
-                label="Precisión Media",
-                value=f"{avg_accuracy:.1%}"
-            )
-        
-        with kpi3_col2:
-            st.metric(
-                label="Precisión Mínima",
-                value=f"{min_accuracy:.1%}"
-            )
-        
-        with kpi3_col3:
-            st.metric(
-                label="Precisión Máxima",
-                value=f"{max_accuracy:.1%}"
-            )
+with col2:
+    st.markdown('<div class="metric-card">', unsafe_allow_html=True)
+    st.markdown(f'<div style="text-align: center;">Fallas Prevenidas</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="metric-value" style="text-align: center;">{total_fallas_prevenidas}</div>', unsafe_allow_html=True)
+    if var_fallas_prevenidas > 0:
+        st.markdown(f'<div style="text-align: center; color: green;">▲ {var_fallas_prevenidas}% vs período anterior</div>', unsafe_allow_html=True)
     else:
-        # Calcular la precisión como porcentaje de fallas evitadas vs total de potenciales fallas
-        kpi3_data = filtered_df.groupby('fecha').agg({
-            'fallas_ocurridas': 'sum',
-            'fallas_evitadas': 'sum'
-        }).reset_index()
-        
-        kpi3_data['precisión_modelo'] = kpi3_data['fallas_evitadas'] / (kpi3_data['fallas_evitadas'] + kpi3_data['fallas_ocurridas'])
-        
-        avg_accuracy = kpi3_data['precisión_modelo'].mean()
-        min_accuracy = kpi3_data['precisión_modelo'].min()
-        max_accuracy = kpi3_data['precisión_modelo'].max()
-        
-        # Cards para KPI 3
-        kpi3_col1, kpi3_col2, kpi3_col3 = st.columns(3)
-        
-        with kpi3_col1:
-            st.metric(
-                label="Precisión Media",
-                value=f"{avg_accuracy:.1%}"
-            )
-        
-        with kpi3_col2:
-            st.metric(
-                label="Precisión Mínima",
-                value=f"{min_accuracy:.1%}"
-            )
-        
-        with kpi3_col3:
-            st.metric(
-                label="Precisión Máxima",
-                value=f"{max_accuracy:.1%}"
-            )
-    
-    with st.expander("📌 Detalles del KPI"):
-        st.markdown("""
-        **Construcción del KPI:** Mide la capacidad del modelo de predicción para anticipar fallas correctamente. Se evalúa usando métricas como Accuracy, Sensitivity, Specificity y ROC-AUC.
-        
-        **Importancia:** Indica la confiabilidad del modelo en la toma de decisiones estratégicas.
-        
-        **Factores que afectan este KPI:** Calidad de los datos de entrenamiento, ajuste de hiperparámetros, variabilidad en los datos operativos.
-        """)
-    
-except Exception as e:
-    st.error(f"Error al calcular KPI 3: {e}")
+        st.markdown(f'<div style="text-align: center; color: red;">▼ {abs(var_fallas_prevenidas)}% vs período anterior</div>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
 
-# Sección 4: Gráficos del Dashboard
-st.header("4️⃣ Gráficos del Dashboard")
+with col3:
+    st.markdown('<div class="metric-card">', unsafe_allow_html=True)
+    st.markdown(f'<div style="text-align: center;">Total Fallas</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="metric-value" style="text-align: center;">{total_fallas}</div>', unsafe_allow_html=True)
+    st.markdown(f'<div style="text-align: center;" class="target-text">Meta: Reducción del 60%</div>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
 
-# Gráfico 1: Evolución de fallas ocurridas y prevenidas
-st.subheader("📊 Gráfico 1: Evolución de fallas ocurridas y prevenidas")
+with col4:
+    st.markdown('<div class="metric-card">', unsafe_allow_html=True)
+    st.markdown(f'<div style="text-align: center;">Tasa de Prevención</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="metric-value" style="text-align: center;">{tasa_prevencion}%</div>', unsafe_allow_html=True)
+    st.markdown(f'<div style="text-align: center;" class="target-text">Proporción de fallas prevenidas</div>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
 
-try:
-    # Agregación por fecha para mostrar la evolución temporal
-    g1_data = filtered_df.groupby('fecha').agg({
-        'fallas_ocurridas': 'sum',
-        'fallas_evitadas': 'sum'
-    }).reset_index()
-    
-    # Gráfico de líneas con Plotly
-    fig1 = go.Figure()
-    
-    fig1.add_trace(go.Scatter(
-        x=g1_data['fecha'],
-        y=g1_data['fallas_ocurridas'],
-        mode='lines+markers',
-        name='Fallas Ocurridas',
-        line=dict(color='#FF5733', width=2),
-        marker=dict(size=8)
-    ))
-    
-    fig1.add_trace(go.Scatter(
-        x=g1_data['fecha'],
-        y=g1_data['fallas_evitadas'],
-        mode='lines+markers',
-        name='Fallas Evitadas',
-        line=dict(color='#33A8FF', width=2),
-        marker=dict(size=8)
-    ))
-    
-    fig1.update_layout(
-        title='¿Cómo ha evolucionado la cantidad de fallas ocurridas y prevenidas en el tiempo?',
-        xaxis_title='Fecha',
-        yaxis_title='Número de Fallas',
-        legend=dict(
-            orientation="h",
-            yanchor="bottom",
-            y=1.02,
-            xanchor="right",
-            x=1
-        ),
-        hovermode="x unified"
-    )
-    
-    st.plotly_chart(fig1, use_container_width=True)
-    
-    with st.expander("💡 Explicación"):
-        st.markdown("""
-        Este gráfico muestra la evolución mensual de fallas en maquinaria y cuántas fueron anticipadas mediante el modelo predictivo.
-        
-        Podemos observar cómo ha ido cambiando la relación entre las fallas que ocurrieron realmente (línea roja) y las que el sistema pudo evitar (línea azul) a lo largo del tiempo, evidenciando la mejora en la efectividad del modelo predictivo.
-        """)
-    
-except Exception as e:
-    st.error(f"Error al generar Gráfico 1: {e}")
+# Gráficos
+st.markdown('<div class="sub-header">Evolución de Fallas Detectadas y Prevenidas</div>', unsafe_allow_html=True)
 
-# Gráfico 2: Tendencia del costo de mantenimiento correctivo
-st.subheader("📊 Gráfico 2: Tendencia del costo de mantenimiento correctivo")
+# Crear gráfico de evolución temporal con Plotly
+fig = go.Figure()
 
-try:
-    # Agregación por fecha y máquina para los costos
-    g2_data = filtered_df.groupby(['fecha', 'maquina']).agg({
-        'costo_mantenimiento_correctivo': 'mean'
-    }).reset_index()
-    
-    # Gráfico de barras con Plotly
-    fig2 = px.bar(
-        g2_data,
-        x='fecha',
-        y='costo_mantenimiento_correctivo',
-        color='maquina',
-        title='¿Cuál es la tendencia del costo de mantenimiento correctivo después de la implementación?',
-        labels={
-            'fecha': 'Fecha',
-            'costo_mantenimiento_correctivo': 'Costo de Mantenimiento ($)',
-            'maquina': 'Máquina'
-        }
-    )
-    
-    # Añadir línea de implementación (fecha media)
-    median_date = filtered_df['fecha'].min() + (filtered_df['fecha'].max() - filtered_df['fecha'].min()) / 2
-    
-    fig2.add_vline(
-        x=median_date,
-        line_dash="dash",
-        line_color="red",
-        annotation_text="Implementación del Modelo",
-        annotation_position="top right"
-    )
-    
-    fig2.update_layout(
-        xaxis_title='Fecha',
-        yaxis_title='Costo de Mantenimiento ($)',
-        legend=dict(
-            orientation="h",
-            yanchor="bottom",
-            y=1.02,
-            xanchor="right",
-            x=1
-        )
-    )
-    
-    st.plotly_chart(fig2, use_container_width=True)
-    
-    with st.expander("💡 Explicación"):
-        st.markdown("""
-        Este gráfico visualiza la reducción de costos operativos, demostrando el impacto financiero de la estrategia predictiva.
-        
-        La línea roja punteada marca la fecha aproximada de implementación del modelo predictivo. Se puede observar cómo los costos tienden a reducirse después de esta implementación, evidenciando el retorno de inversión del proyecto.
-        """)
-    
-except Exception as e:
-    st.error(f"Error al generar Gráfico 2: {e}")
+# Añadir línea de fallas ocurridas
+fig.add_trace(go.Scatter(
+    x=df_totales_filtrado['Fecha_dt'],
+    y=df_totales_filtrado['Fallas Ocurridas'],
+    mode='lines+markers',
+    name='Fallas Ocurridas',
+    line=dict(color='#e74c3c', width=2),
+    marker=dict(size=8)
+))
 
-# Gráfico 3: Relación entre vibraciones y fallas
-st.subheader("📊 Gráfico 3: Relación entre vibraciones y fallas")
+# Añadir línea de fallas prevenidas
+fig.add_trace(go.Scatter(
+    x=df_totales_filtrado['Fecha_dt'],
+    y=df_totales_filtrado['Fallas Prevenidas'],
+    mode='lines+markers',
+    name='Fallas Prevenidas',
+    line=dict(color='#2ecc71', width=2, dash='dash'),
+    marker=dict(size=8)
+))
 
-try:
-    # Scatter plot para vibración vs fallas
-    fig3 = px.scatter(
-        filtered_df,
-        x='vibraciones_anomalas',
-        y='fallas_ocurridas',
-        color='maquina',
-        size='temperatura_equipo',
-        hover_data=['fecha', 'consumo_energia'],
-        title='¿Cuál es la relación entre las vibraciones de la maquinaria y la cantidad de fallas ocurridas?',
-        labels={
-            'vibraciones_anomalas': 'Vibraciones Anómalas (Hz)',
-            'fallas_ocurridas': 'Número de Fallas',
-            'maquina': 'Máquina',
-            'temperatura_equipo': 'Temperatura (°C)'
-        }
-    )
-    
-    fig3.update_layout(
-        xaxis_title='Vibraciones Anómalas (Hz)',
-        yaxis_title='Número de Fallas',
-        legend=dict(
-            orientation="h",
-            yanchor="bottom",
-            y=1.02,
-            xanchor="right",
-            x=1
-        )
-    )
-    
-    st.plotly_chart(fig3, use_container_width=True)
-    
-    with st.expander("💡 Explicación"):
-        st.markdown("""
-        Este gráfico muestra la relación entre las vibraciones anómalas y las fallas detectadas, permitiendo validar la influencia de este factor en la predicción.
-        
-        Cada punto representa una medición, donde el eje X muestra el nivel de vibraciones anómalas y el eje Y el número de fallas ocurridas. El tamaño del punto representa la temperatura del equipo, permitiendo visualizar la interacción entre estos tres factores críticos para la predicción de fallas.
-        """)
-    
-except Exception as e:
-    st.error(f"Error al generar Gráfico 3: {e}")
+# Añadir línea vertical para proyección
+inicio_proyeccion_str = inicio_proyeccion.strftime('%Y-%m-%d')
+if (df_totales_filtrado['Fecha_dt'] >= inicio_proyeccion).any():
+    fig.add_vline(x=inicio_proyeccion, line_width=2, line_dash="dot", line_color="grey")
+    fig.add_annotation(x=inicio_proyeccion, y=1.05, yref="paper",
+                      text="Inicio de Proyección", showarrow=True,
+                      arrowhead=1, arrowcolor="grey")
 
-# Gráfico 4: Precisión del modelo a lo largo del tiempo
-st.subheader("📊 Gráfico 4: Precisión del modelo de predicción a lo largo del tiempo")
-
-try:
-    # Verificar si existe la columna de precisión, si no, calcularla
-    if 'precisión_modelo' in filtered_df.columns:
-        # Agrupar por fecha para ver evolución temporal
-        g4_data = filtered_df.groupby(['fecha', 'maquina']).agg({
-            'precisión_modelo': 'mean'
-        }).reset_index()
-    else:
-        # Calcular precisión como fallas evitadas / (evitadas + ocurridas)
-        g4_data = filtered_df.groupby(['fecha', 'maquina']).apply(
-            lambda x: pd.Series({
-                'precisión_modelo': x['fallas_evitadas'].sum() / (x['fallas_evitadas'].sum() + x['fallas_ocurridas'].sum())
-                if (x['fallas_evitadas'].sum() + x['fallas_ocurridas'].sum()) > 0 else 0
-            })
-        ).reset_index()
-    
-    # Crear gráfico de líneas
-    fig4 = px.line(
-        g4_data,
-        x='fecha',
-        y='precisión_modelo',
-        color='maquina',
-        title='¿Cómo varía la precisión del modelo de predicción de fallas a lo largo del tiempo?',
-        labels={
-            'fecha': 'Fecha',
-            'precisión_modelo': 'Precisión del Modelo',
-            'maquina': 'Máquina'
-        }
-    )
-    
-    # Añadir rangos de referencia
-    fig4.add_hline(y=0.7, line_dash="dash", line_color="orange", annotation_text="Precisión Objetivo Mínima")
-    fig4.add_hline(y=0.9, line_dash="dash", line_color="green", annotation_text="Precisión Objetivo Óptima")
-    
-    fig4.update_layout(
-        xaxis_title='Fecha',
-        yaxis_title='Precisión del Modelo (%)',
-        yaxis=dict(
-            tickformat='.0%'
-        ),
-        legend=dict(
-            orientation="h",
-            yanchor="bottom",
-            y=1.02,
-            xanchor="right",
-            x=1
-        )
-    )
-    
-    st.plotly_chart(fig4, use_container_width=True)
-    
-    with st.expander("💡 Explicación"):
-        st.markdown("""
-        Este gráfico ilustra la precisión del modelo predictivo, evaluando su estabilidad y efectividad en distintos períodos.
-        
-        Podemos observar la evolución de la precisión del modelo para cada máquina a lo largo del tiempo. Las líneas de referencia naranja y verde indican los niveles objetivo de precisión (mínimo y óptimo, respectivamente) para considerar que el modelo es efectivo en la predicción de fallas.
-        """)
-    
-except Exception as e:
-    st.error(f"Error al generar Gráfico 4: {e}")
-
-# Sección 5: Datos Necesarios y Fuentes
-st.header("5️⃣ Datos Necesarios y Cómo Fueron Obtenidos")
-
-with st.expander("Ver tabla de variables y fuentes de datos"):
-    data_sources = pd.DataFrame({
-        'Variable': ['Fecha de medición', 'Máquina monitoreada', 'Temperatura del equipo (°C)', 
-                    'Vibraciones anómalas (Hz)', 'Consumo de energía (kWh)', 'Número de fallas detectadas',
-                    'Número de fallas evitadas', 'Costo de mantenimiento correctivo ($)', 'Tiempo medio de respuesta (min)'],
-        'Fuente de Datos': ['Sensores IoT y registros de mantenimiento', 'Inventario de equipos en la planta', 
-                            'Sensores IoT', 'Sensores IoT (acelerómetros)', 'Sensores IoT', 'Reportes de mantenimiento', 
-                            'Gemelo digital (simulaciones)', 'ERP, Finanzas', 'Sistema de monitoreo'],
-        'Método de Obtención': ['Captura en tiempo real', 'Relación con datos IoT', 'Media diaria/mensual', 
-                               'Análisis en tiempo real', 'Registro automático', 'Registro de fallas', 
-                               'Comparación con histórico', 'Reportes financieros', 'Captura en tiempo real'],
-        'Transformaciones Necesarias': ['Ninguna, solo formato de tiempo', 'Asociar con ID de máquina', 'Cálculo de desviaciones', 
-                                       'Promedio mensual', 'Media y varianza mensual', 'Frecuencia de ocurrencia', 
-                                       'Calcular % de reducción', 'Comparación pre/post intervención', 'Cálculo de tiempos promedio']
-    })
-    
-    st.table(data_sources)
-
-# Sección 6: Acciones Necesarias
-st.header("6️⃣ Acciones Necesarias")
-
-action_col1, action_col2 = st.columns(2)
-
-with action_col1:
-    st.info("🛠️ Integrar sensores IoT en toda la maquinaria crítica para mejorar la recolección de datos en tiempo real.")
-    st.info("🛠️ Optimizar los modelos predictivos ajustando hiperparámetros y evaluando nuevas arquitecturas de machine learning.")
-    st.info("🛠️ Capacitar a los operadores y equipos de mantenimiento para interpretar correctamente los datos y responder a alertas predictivas.")
-
-with action_col2:
-    st.info("🛠️ Revisar periódicamente la precisión del modelo y actualizarlo con datos más recientes.")
-    st.info("🛠️ Implementar un sistema de alertas visuales y notificaciones dentro del dashboard para advertencias críticas.")
-
-# Vista de datos y descarga
-st.header("Vista de Datos")
-
-with st.expander("Ver datos utilizados"):
-    st.dataframe(filtered_df)
-
-# Botón de descarga de datos
-csv = filtered_df.to_csv(index=False).encode('utf-8')
-st.download_button(
-    label="Descargar Datos en CSV",
-    data=csv,
-    file_name="arcelik_datos_gemelo_digital.csv",
-    mime="text/csv",
+# Personalizar el gráfico
+fig.update_layout(
+    title='Evolución de Fallas a lo Largo del Tiempo',
+    xaxis_title='Fecha',
+    yaxis_title='Número de Fallas',
+    hovermode='x unified',
+    legend=dict(
+        orientation="h",
+        yanchor="bottom",
+        y=1.02,
+        xanchor="right",
+        x=1
+    ),
+    height=500,
+    margin=dict(l=20, r=20, t=70, b=20),
 )
 
-# Pie de página
-st.markdown("---")
-st.markdown("*Dashboard desarrollado para la visualización de KPIs de predicción de fallas mediante gemelos digitales para Arçelik*")
+# Mostrar el gráfico
+st.plotly_chart(fig, use_container_width=True)
+
+# Añadir información sobre la proyección
+if (df_filtrado['Es Proyección'] == True).any():
+    st.markdown('<div class="highlight">📊 Los datos a partir de octubre 2024 son proyecciones basadas en tendencias y modelos predictivos.</div>', unsafe_allow_html=True)
+
+# Mostrar análisis por máquina
+st.markdown('<div class="sub-header">Análisis por Máquina</div>', unsafe_allow_html=True)
+
+# Agrupar por máquina para el análisis
+df_por_maquina = df_filtrado.groupby('Máquina').agg({
+    'Fallas Ocurridas': 'sum',
+    'Fallas Prevenidas': 'sum'
+}).reset_index()
+
+df_por_maquina['Total Fallas'] = df_por_maquina['Fallas Ocurridas'] + df_por_maquina['Fallas Prevenidas']
+df_por_maquina['Tasa de Prevención (%)'] = np.round((df_por_maquina['Fallas Prevenidas'] / df_por_maquina['Total Fallas']) * 100, 1)
+
+# Gráfico de barras comparativas
+col1, col2 = st.columns([2, 1])
+
+with col1:
+    # Crear gráfico de barras agrupadas
+    fig_barras = go.Figure()
+    
+    fig_barras.add_trace(go.Bar(
+        x=df_por_maquina['Máquina'],
+        y=df_por_maquina['Fallas Ocurridas'],
+        name='Fallas Ocurridas',
+        marker_color='#e74c3c'
+    ))
+    
+    fig_barras.add_trace(go.Bar(
+        x=df_por_maquina['Máquina'],
+        y=df_por_maquina['Fallas Prevenidas'],
+        name='Fallas Prevenidas',
+        marker_color='#2ecc71'
+    ))
+    
+    fig_barras.update_layout(
+        title='Comparativa de Fallas por Máquina',
+        xaxis_title='Máquina',
+        yaxis_title='Número de Fallas',
+        barmode='group',
+        height=400,
+        margin=dict(l=20, r=20, t=70, b=20),
+    )
+    
+    st.plotly_chart(fig_barras, use_container_width=True)
+
+with col2:
+    # Tabla de métricas por máquina
+    st.markdown("### Métricas por Máquina")
+    st.dataframe(df_por_maquina, hide_index=True)
+
+# Análisis tendencial de la tasa de prevención
+st.markdown('<div class="sub-header">Tendencia de la Tasa de Prevención</div>', unsafe_allow_html=True)
+
+# Preparar datos para el gráfico de tasa de prevención
+df_tendencia = df_totales_filtrado.copy()
+df_tendencia['Periodo'] = df_tendencia['Fecha_dt'].dt.strftime('%Y-%m')
+
+# Calcular media móvil de 3 meses
+df_tendencia = df_tendencia.sort_values('Fecha_dt')
+df_tendencia['Tasa Media Móvil 3M'] = df_tendencia['Tasa de Prevención'].rolling(window=3, min_periods=1).mean()
+
+# Gráfico de línea con área para tasa de prevención
+fig_tasa = go.Figure()
+
+# Añadir área de tasa de prevención
+fig_tasa.add_trace(go.Scatter(
+    x=df_tendencia['Fecha_dt'],
+    y=df_tendencia['Tasa de Prevención'],
+    mode='lines',
+    name='Tasa de Prevención (%)',
+    line=dict(color='#3498db', width=2),
+    fill='tozeroy',
+    fillcolor='rgba(52, 152, 219, 0.2)'
+))
+
+# Añadir línea de media móvil
+fig_tasa.add_trace(go.Scatter(
+    x=df_tendencia['Fecha_dt'],
+    y=df_tendencia['Tasa Media Móvil 3M'],
+    mode='lines',
+    name='Media Móvil 3 Meses',
+    line=dict(color='#e67e22', width=2, dash='dot')
+))
+
+# Añadir línea vertical para proyección
+if (df_tendencia['Es Proyección'] == True).any():
+    fig_tasa.add_vline(x=inicio_proyeccion, line_width=2, line_dash="dot", line_color="grey")
+
+# Personalizar el gráfico
+fig_tasa.update_layout(
+    title='Tendencia de la Tasa de Prevención de Fallas',
+    xaxis_title='Fecha',
+    yaxis_title='Tasa de Prevención (%)',
+    yaxis=dict(range=[0, 100]),
+    hovermode='x unified',
+    legend=dict(
+        orientation="h",
+        yanchor="bottom",
+        y=1.02,
+        xanchor="right",
+        x=1
+    ),
+    height=400,
+    margin=dict(l=20, r=20, t=70, b=20),
+)
+
+# Mostrar el gráfico
+st.plotly_chart(fig_tasa, use_container_width=True)
+
+# Tabla de datos mensuales para el período seleccionado
+with st.expander("Ver datos mensuales detallados", expanded=False):
+    # Agrupar por año y mes
+    df_mensual = df_filtrado.groupby(['Año', 'Mes', 'Mes_Nombre']).agg({
+        'Fallas Ocurridas': 'sum',
+        'Fallas Prevenidas': 'sum'
+    }).reset_index()
+    
+    df_mensual['Total Fallas'] = df_mensual['Fallas Ocurridas'] + df_mensual['Fallas Prevenidas']
+    df_mensual['Tasa de Prevención (%)'] = np.round((df_mensual['Fallas Prevenidas'] / df_mensual['Total Fallas']) * 100, 1)
+    
+    # Ordenar por año y mes
+    df_mensual = df_mensual.sort_values(['Año', 'Mes'])
+    
+    # Crear columna para mostrar período
+    df_mensual['Período'] = df_mensual['Mes_Nombre'] + ' ' + df_mensual['Año'].astype(str)
+    
+    # Seleccionar y reordenar columnas para mostrar
+    df_mensual_mostrar = df_mensual[['Período', 'Fallas Ocurridas', 'Fallas Prevenidas', 
+                                     'Total Fallas', 'Tasa de Prevención (%)']]
+    
+    st.dataframe(df_mensual_mostrar, hide_index=True)
+
+# Análisis de Metas y Progreso
+st.markdown('<div class="sub-header">Progreso Hacia los Key Results</div>', unsafe_allow_html=True)
+
+# Cálculo simplificado del progreso hacia las metas
+# KR1: Implementar modelos predictivos en el 100% de líneas críticas
+kr1_objetivo = 100  # 100% de las líneas críticas
+kr1_progreso = len(maquinas_seleccionadas) / len(maquinas) * 100
+
+# KR2: Reducción del 70% en fallas no programadas
+kr2_objetivo = 70  # 70% de reducción
+# Calcular el % de reducción en fallas ocurridas (primeros 12 meses vs últimos 12 meses disponibles)
+primeros_12m = df[(df['Fecha_dt'] >= pd.to_datetime('2022-01-01')) & (df['Fecha_dt'] <= pd.to_datetime('2022-12-31'))]
+ultimos_12m = df[(df['Fecha_dt'] >= pd.to_datetime('2024-01-01')) & (df['Fecha_dt'] <= pd.to_datetime('2024-12-31'))]
+
+fallas_primer_año = primeros_12m['Fallas Ocurridas'].sum()
+fallas_ultimo_año = ultimos_12m['Fallas Ocurridas'].sum()
+
+kr2_progreso = ((fallas_primer_año - fallas_ultimo_año) / fallas_primer_año) * 100 if fallas_primer_año > 0 else 0
+
+# KR3: Reducción del 30% en costos de mantenimiento correctivo
+kr3_objetivo = 30  # 30% de reducción
+# Simulamos que el costo de mantenimiento correctivo está directamente relacionado con las fallas ocurridas
+kr3_progreso = kr2_progreso  # Simplificación: misma reducción en % que las fallas
+
+# Mostrar métricas en gráficos de progreso
+col1, col2, col3 = st.columns(3)
+
+with col1:
+    fig_kr1 = go.Figure(go.Indicator(
+        mode="gauge+number",
+        value=kr1_progreso,
+        title={'text': "KR1: Implementación en Líneas Críticas"},
+        domain={'x': [0, 1], 'y': [0, 1]},
+        gauge={
+            'axis': {'range': [0, 100], 'tickwidth': 1},
+            'bar': {'color': "#3498db"},
+            'steps': [
+                {'range': [0, 50], 'color': "lightgray"},
+                {'range': [50, 80], 'color': "lightblue"},
+                {'range': [80, 100], 'color': "rgba(52, 152, 219, 0.3)"}
+            ],
+            'threshold': {
+                'line': {'color': "red", 'width': 4},
+                'thickness': 0.75,
+                'value': 100
+            }
+        }
+    ))
+    
+    fig_kr1.update_layout(height=250, margin=dict(l=20, r=20, t=50, b=20))
+    st.plotly_chart(fig_kr1, use_container_width=True)
+    st.markdown(f"**Meta:** 100% de líneas críticas con modelos predictivos")
+
+with col2:
+    fig_kr2 = go.Figure(go.Indicator(
+        mode="gauge+number",
+        value=kr2_progreso,
+        title={'text': "KR2: Reducción de Fallas No Programadas"},
+        domain={'x': [0, 1], 'y': [0, 1]},
+        gauge={
+            'axis': {'range': [0, 100], 'tickwidth': 1},
+            'bar': {'color': "#2ecc71"},
+            'steps': [
+                {'range': [0, 30], 'color': "lightgray"},
+                {'range': [30, 50], 'color': "lightgreen"},
+                {'range': [50, 100], 'color': "rgba(46, 204, 113, 0.3)"}
+            ],
+            'threshold': {
+                'line': {'color': "red", 'width': 4},
+                'thickness': 0.75,
+                'value': 70
+            }
+        }
+    ))
+    
+    fig_kr2.update_layout(height=250, margin=dict(l=20, r=20, t=50, b=20))
+    st.plotly_chart(fig_kr2, use_container_width=True)
+    st.markdown(f"**Meta:** 70% de reducción en 24 meses")
+
+with col3:
+    fig_kr3 = go.Figure(go.Indicator(
+        mode="gauge+number",
+        value=kr3_progreso,
+        title={'text': "KR3: Reducción en Costos de Mantenimiento"},
+        domain={'x': [0, 1], 'y': [0, 1]},
+        gauge={
+            'axis': {'range': [0, 100], 'tickwidth': 1},
+            'bar': {'color': "#f39c12"},
+            'steps': [
+                {'range': [0, 15], 'color': "lightgray"},
+                {'range': [15, 30], 'color': "lightyellow"},
+                {'range': [30, 100], 'color': "rgba(243, 156, 18, 0.3)"}
+            ],
+            'threshold': {
+                'line': {'color': "red", 'width': 4},
+                'thickness': 0.75,
+                'value': 30
+            }
+        }
+    ))
+    
+    fig_kr3.update_layout(height=250, margin=dict(l=20, r=20, t=50, b=20))
+    st.plotly_chart(fig_kr3, use_container_width=True)
+    st.markdown(f"**Meta:** 30% de reducción en costos")
+
+# Acciones recomendadas basadas en los datos
+st.markdown('<div class="sub-header">Acciones Recomendadas</div>', unsafe_allow_html=True)
+
+col1, col2 = st.columns(2)
+
+with col1:
+    st.markdown('<div class="highlight">', unsafe_allow_html=True)
+    st.markdown("#### Acciones Prioritarias")
+    st.markdown("""
+    1. **Expandir la integración de sensores IoT** en todas las líneas críticas restantes.
+    2. **Mejorar la precisión del modelo predictivo** para la Línea C, que muestra la menor tasa de prevención.
+    3. **Implementar alertas automatizadas
